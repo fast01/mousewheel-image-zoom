@@ -194,10 +194,24 @@ export default class MouseWheelZoomPlugin extends Plugin {
 
     private getZoomParams(imageUri: string, fileText: string, parent: Element) {
        if (imageUri.contains("http")) {
-           return this.getRemoteImageZoomParams(imageUri, fileText)
+           console.log("remote imageUri: ", imageUri);
+           return this.getRemoteImageZoomParams(imageUri, fileText);
        } else if (imageUri.contains("app://local")) {
            const imageName = MouseWheelZoomPlugin.getImageNameFromUri(imageUri);
-           return this.getLocalImageZoomParams(imageName, fileText)
+           //return this.getLocalImageZoomParams(imageName, fileText)
+            const orig_url =  parent.attributes.getNamedItem("src").textContent; 
+            const imgFormatMatchRegExp = new RegExp(`\\[\\[${escapeRegex(orig_url)}`);  
+            const imgFormatMatchResult = fileText.match(imgFormatMatchRegExp);  
+            console.log("local full imageUri: ", imageUri, imageName, " orig:", orig_url);
+            //console.log("imgFormatMatchRegExp, imgFormatMatchResult");
+             if (imgFormatMatchResult === null) {
+                // if image format like ![](./dir/xxx.img) 
+                return this.getRemoteImageZoomParams(orig_url, fileText);
+            }
+             else {
+                  // if image format like ![[ xxx.img ]], use this one!
+                 return this.getLocalImageZoomParamsEx(orig_url, fileText);
+             }
        } else if (parent.classList.value.match("excalidraw-svg.*")) {
            const src = parent.attributes.getNamedItem("src").textContent;
            // remove ".md" from the end of the src
@@ -225,16 +239,56 @@ export default class MouseWheelZoomPlugin extends Plugin {
         const regexSeparator = isInTable ? "\\\\\\|" : "\\|"
 
         const sizeMatchRegExp = new RegExp(`${regexSeparator}(\\d+)]${escapeRegex("("+imageUri+")")}`);
-
         const replaceSizeExistFrom = (oldSize: number) => `${sizeSeparator}${oldSize}](${imageUri})`;
         const replaceSizeExistWith = (newSize: number) => `${sizeSeparator}${newSize}](${imageUri})`;
-
         const replaceSizeNotExistsFrom = (oldSize: number) => `](${imageUri})`;
         const replaceSizeNotExistsWith = (newSize: number) => `${sizeSeparator}${newSize}](${imageUri})`;
 
         const replaceSizeExist = new ReplaceTerm(replaceSizeExistFrom, replaceSizeExistWith);
         const replaceSizeNotExist = new ReplaceTerm(replaceSizeNotExistsFrom, replaceSizeNotExistsWith);
 
+        return {
+            sizeMatchRegExp: sizeMatchRegExp,
+            replaceSizeExist: replaceSizeExist,
+            replaceSizeNotExist: replaceSizeNotExist,
+        }
+    }
+/**
+     * Get the parameters needed to handle the zoom for a local image
+     * @param imageName Name of the image
+     * @param fileText content of the current file
+     * @returns parameters to handle the zoom
+     * @note  this local file only match format ![[ abcdeft.img ]]
+     */
+    private getLocalImageZoomParamsEx(imageName: string, fileText: string): HandleZoomParams {
+        const isInTable = MouseWheelZoomPlugin.isInTable(imageName, fileText)
+        // Separator to use for the replacement
+        const sizeSeparator = isInTable ? "\\|" : "|";
+        // Separator to use for the regex: isInTable ? \\\| : \|
+        const regexSeparator = isInTable ? "\\\\\\|" : "\\|";
+
+        /*
+        // If after the imageName in filetext follows a "|" then it means that the image is already zoomed
+        const imageNamePosition = fileText.indexOf(imageName);
+        const stringAfterFileName = fileText.substring(imageNamePosition + imageName.length)
+        // Handle the case where behind the imageName there are more attributes like |ctr for ITS Theme by attaching them to the imageName
+        const regExpMatchArray = stringAfterFileName.match(/([^\]]*?)\\?\|\d+]]|([^\]]*?)]]|/);
+        if (regExpMatchArray) {
+            if (!!regExpMatchArray[1]) {
+                imageName += regExpMatchArray[1]
+            } else if (!!regExpMatchArray[2]) {
+                imageName += regExpMatchArray[2]
+            }
+        }
+        */
+        const sizeMatchRegExp = new RegExp(`\\[\\[${escapeRegex(imageName)}${regexSeparator}(\\d+)`);
+        const replaceSizeExistFrom = (oldSize: number) => `\[\[${imageName}${sizeSeparator}${oldSize}`;
+        const replaceSizeExistWith = (newSize: number) => `\[\[${imageName}${sizeSeparator}${newSize}`;
+        const replaceSizeNotExistsFrom = (oldSize: number) => `\[\[${imageName}`;
+        const replaceSizeNotExistsWith = (newSize: number) => `\[\[${imageName}${sizeSeparator}${newSize}`;
+        const replaceSizeExist = new ReplaceTerm(replaceSizeExistFrom, replaceSizeExistWith);
+        const replaceSizeNotExist = new ReplaceTerm(replaceSizeNotExistsFrom, replaceSizeNotExistsWith);
+        //console.log("local image zoom params: ", imageName);
         return {
             sizeMatchRegExp: sizeMatchRegExp,
             replaceSizeExist: replaceSizeExist,
